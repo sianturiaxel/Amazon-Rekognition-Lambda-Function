@@ -1,0 +1,67 @@
+import boto3
+import json
+import urllib
+
+BUCKET = "aws-s3.intern.pansolusi.com"
+
+#COMPARE FACE
+def compare_faces(bucket, key, bucket_target, key_target, threshold=80, region="ap-southeast-1"):
+	rekognition = boto3.client("rekognition", region)
+	try:
+		response = rekognition.compare_faces(
+	    	SourceImage={
+				"S3Object": {
+					"Bucket": bucket,
+					"Name": key,
+				}
+			},
+			TargetImage={
+				"S3Object": {
+					"Bucket": bucket_target,
+					"Name": key_target,
+				}
+			},
+	    	SimilarityThreshold=threshold,
+		)
+		if response['FaceMatches'][0]['Similarity'] > 90:
+			return 1
+		else:
+			return 0
+	except:
+		return 0
+	
+#IOT PUBLISH
+def iot_publish(text):
+    client = boto3.client('iot-data', region_name='ap-southeast-1')
+    
+    response = client.publish(
+        topic='rpi4/message',
+        qos=1,
+        payload=text
+    )
+
+def check_rfid(x):
+    RFD= ['591403964686', '111382982248']
+    if x in RFD:
+        return 1
+    else:
+        return 0
+
+
+def lambda_handler(event, context):
+    objIMG = str(urllib.unquote_plus(event['Records'][0]['s3']['object']['key'].encode('utf8')))
+    RFID = objIMG.replace('.jpg','',1)
+    print 'rf '+RFID
+    
+    if check_rfid(RFID):
+        if compare_faces(BUCKET, objIMG, BUCKET,'target_'+objIMG):
+            iot_publish('Allow')
+            print '1'
+        else:
+            iot_publish('Block')
+            print '2'
+    else:
+		iot_publish('Block')
+		print '3'        
+    return 1
+    print 'endsss'
